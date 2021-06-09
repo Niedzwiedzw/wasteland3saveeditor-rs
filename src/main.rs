@@ -1,6 +1,7 @@
 mod error;
 use clap::{App, Arg};
 use std::io::{BufRead, Read, Write};
+use xmltree::{Element, EmitterConfig};
 
 fn header_length(save_path: &str) -> Result<usize, Box<dyn std::error::Error>> {
     let save_file = std::fs::File::open(save_path)?;
@@ -14,6 +15,15 @@ fn header_length(save_path: &str) -> Result<usize, Box<dyn std::error::Error>> {
     }
 
     return Err(Box::new(error::SaveEditorError::BadFormat));
+}
+
+fn format_xml(input: String) -> Result<String, Box<dyn std::error::Error>> {
+    let mut cfg = EmitterConfig::new();
+    cfg.perform_indent = true;
+    let el = Element::parse(input.as_bytes())?;
+    let mut output = Vec::new();
+    el.write_with_config(&mut output, cfg)?;
+    Ok(String::from_utf8(output)?)
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -46,7 +56,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!(" :: content len = {}", content.len());
     let uncompressed = lzf::decompress(&content, 2usize.pow(25))
         .map_err(|_e| error::SaveEditorError::BadFormat)?;
+
     println!(" :: uncompressed len = {}", uncompressed.len());
+    let uncompressed = format_xml(String::from_utf8(uncompressed)?)?
+        .as_bytes()
+        .into_iter()
+        .cloned()
+        .collect::<Vec<_>>();
+    println!(" :: uncompressed after formatting len = {}", uncompressed.len());
     let tmp_file = format!("{}__EDITED.xml", save_path);
     std::fs::write(&tmp_file, uncompressed)?;
     std::process::Command::new(editor).arg(&tmp_file).status()?;
@@ -56,9 +73,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     std::fs::remove_file(&tmp_file)?;
     let recompressed = lzf::compress(&modified).map_err(|_e| error::SaveEditorError::BadFormat)?;
     println!(" :: recompressed len = {}", recompressed.len());
-    let new_header = substitute_header_key(header, "DataSize".to_string(), format!("{}", modified.len()))?;
-    let new_header = substitute_header_key(new_header, "SaveDataSize".to_string(), format!("{}", recompressed.len()))?;
-    println!(":: new_header :: {}", String::from_utf8(new_header.clone())?);
+    let new_header = substitute_header_key(
+        header,
+        "DataSize".to_string(),
+        format!("{}", modified.len()),
+    )?;
+    let new_header = substitute_header_key(
+        new_header,
+        "SaveDataSize".to_string(),
+        format!("{}", recompressed.len()),
+    )?;
+    println!(
+        ":: new_header :: {}",
+        String::from_utf8(new_header.clone())?
+    );
     let mut hacked_file = std::fs::File::open(format!("{}.HACKED.xml", &save_path))?;
     hacked_file.write(&new_header)?;
     hacked_file.write(&recompressed)?;
@@ -74,9 +102,9 @@ fn substitute_header_key(
     Ok(header
         .lines()
         .into_iter()
-       .map(|l| match l.starts_with(&key) {
-           false => l.to_string(),
-           true => format!("{}:={}", key, value),
+        .map(|l| match l.starts_with(&key) {
+            false => l.to_string(),
+            true => format!("{}:={}", key, value),
         })
         .collect::<Vec<_>>()
         .join("\n")
@@ -112,13 +140,11 @@ DLCReq:=2"#;
             .collect::<Vec<_>>();
 
         assert_eq!(
-            String::from_utf8(substitute_header_key(
-                header,
-                "DataSize".to_string(),
-                "1".to_string(),
-            ).unwrap())
-                .unwrap()
-                .as_str(),
+            String::from_utf8(
+                substitute_header_key(header, "DataSize".to_string(), "1".to_string(),).unwrap()
+            )
+            .unwrap()
+            .as_str(),
             r#"XLZF
 Version:=0.91
 Location:=ar_0000_WorldMap
@@ -134,7 +160,4 @@ DifficultSkillChecks:=False
 DLCReq:=2"#,
         );
     }
-
-
-
 }
