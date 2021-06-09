@@ -87,9 +87,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ":: new_header :: {}",
         String::from_utf8(new_header.clone())?
     );
-    let mut hacked_file = std::fs::File::open(format!("{}.HACKED.xml", &save_path))?;
+    let output_file_name = format!("{}.HACKED.xml", save_path);
+    println!(":: saving in [{}]", output_file_name);
+
+    let mut hacked_file = std::fs::File::create(output_file_name)?;
     hacked_file.write(&new_header)?;
     hacked_file.write(&recompressed)?;
+    println!(" :: :: [DONE] :: :: ");
     Ok(())
 }
 
